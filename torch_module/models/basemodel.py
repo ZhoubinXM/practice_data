@@ -10,6 +10,7 @@ from ..utils import *
 from tqdm import tqdm
 from tensorboardX import SummaryWriter
 from sklearn.metrics import log_loss, roc_auc_score, mean_squared_error, accuracy_score
+from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix
 from tensorflow.python.keras.callbacks import CallbackList, History
 
 
@@ -108,8 +109,12 @@ class BaseModel(nn.Module):
                             for name, metric_fun in self.metrics.items():
                                 if name not in train_result:
                                     train_result[name] = []
-                                train_result[name].append(metric_fun(
-                                    y.cpu().data.numpy(), y_pre.cpu().data.numpy().astype("float64")))
+                                try:
+                                    train_result[name].append(metric_fun(
+                                        y.cpu().data.numpy(), y_pre.cpu().data.numpy().astype("float64")))
+                                except Exception:
+                                    y_pre = np.where(y_pre > 0.5, 1., 0.)
+                                    train_result[name].append(metric_fun(y.cpu().data.numpy(), y_pre))
             except KeyboardInterrupt:
                 t.close()
                 raise
@@ -160,7 +165,12 @@ class BaseModel(nn.Module):
         val_pre = self.predict(x, batch_size)
         val_res = {}
         for name, metric_func in self.metrics.items():
-            val_res[name] = metric_func(y, val_pre)
+            try:
+                val_res[name] = metric_func(y, val_pre)
+            except Exception:
+                val_pre = np.where(val_pre > 0.5, 1., 0.)
+                val_res[name] = metric_func(y, val_pre)
+
         return val_res
 
     def predict(self, x, batch_size):
@@ -244,6 +254,12 @@ class BaseModel(nn.Module):
                     metrics_[metric] = mean_squared_error
                 if metric == "accuracy" or metric == "acc":
                     metrics_[metric] = self._accuracy_score
+                if metric == "precision":
+                    metrics_[metric] = precision_score
+                if metric == "recall":
+                    metrics_[metric] = recall_score
+                if metric == "f1":
+                    metrics_[metric] = f1_score
                 self.metrics_names.append(metric)
         else:
             raise ValueError("metrics must is list type, like ['auc'...]")

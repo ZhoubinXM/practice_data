@@ -9,7 +9,7 @@ from torch_module.models.basemodel import BaseModel
 class MLP(BaseModel):
     def __init__(self, input_dim, hidden_units, activation='relu', device='cpu', use_bn=True):
         super(MLP, self).__init__(device=device)
-        self.mlp = DNN(input_dim, hidden_units[:-1], activation=activation, device=device)
+        self.mlp = DNN(input_dim, hidden_units[:-1], activation=activation, device=device, use_bn=use_bn)
         self.linear = nn.Linear(hidden_units[-2], hidden_units[-1])
         torch.nn.init.xavier_uniform_(self.linear.weight)
         self.predict_header = PredictionLayer(task='binary', use_bias=False)

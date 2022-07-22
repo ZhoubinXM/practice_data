@@ -14,15 +14,15 @@ if __name__ == "__main__":
     model_name = './model_checkpoints/task_1_test_model.ckpt'
     logs_name = './logs/20220722'
     train_data, train_label, test_data, test_label = data_loader()
-    model = MLP(10, [20, 20, 8, 1], device='cpu')
+    model = MLP(10, [40, 20, 8, 1], device='cpu')
     print(model)
 
     # callback func implement
-    model_checkpoint = ModelCheckpoint(filepath=model_name, monitor='val_acc',
+    model_checkpoint = ModelCheckpoint(filepath=model_name, monitor='val_f1',
                                        verbose=1, save_best_only=True, save_weights_only=True, mode='max', period=1)
     # model_early_stopping = EarlyStopping(monitor='val_acc', patience=50, verbose=1, mode='max')
 
-    model.compile(['adam', 0.01], "binary_cross_entropy", metrics=['mse', 'auc', 'acc'])
+    model.compile(['adam', 0.01], "binary_cross_entropy", metrics=['auc', 'acc', 'recall', 'f1'])
     model.fit(train_data, [train_label], epochs=1000, verbose=2, validation_split=0.2, log_dir=logs_name,
               callbacks=[model_checkpoint
                          # model_early_stopping
