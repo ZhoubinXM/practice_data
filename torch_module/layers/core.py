@@ -9,7 +9,7 @@ from .activation import activation_layer
 class DNN(nn.Module):
 
     def __init__(self, input_dim, hidden_units, activation='relu', dropout_rate=0, seed=2022, l2_reg=0,
-                 use_bn=False, init_std=0.0001, device='cpu', init_weight='normal'):
+                 use_bn=False, init_std=0.0001, device='cpu', init_weight='kaiming_uniform'):
         super(DNN, self).__init__()
         self.dropout_rate = dropout_rate
         self.dropout = nn.Dropout(dropout_rate)
@@ -76,13 +76,15 @@ class PredictionLayer(nn.Module):
         self.task = task
         if self.use_bias:
             self.bias = nn.Parameter(torch.zeros((1,)))
+        if self.task == 'binary':
+            self.prediction_header = torch.nn.Sigmoid()
 
     def forward(self, x):
         output = x
         if self.use_bias:
             output += self.bias
         if self.task == "binary":
-            output = torch.sigmoid(output)
+            output = self.prediction_header(output)
         elif self.task == 'multiclass':
             output = torch.softmax(output, dim=-1)
         return output

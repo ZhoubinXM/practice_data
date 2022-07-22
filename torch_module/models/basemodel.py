@@ -8,16 +8,24 @@ import torch.utils.data as Data
 
 from ..utils import *
 from tqdm import tqdm
+from tensorboardX import SummaryWriter
 from sklearn.metrics import log_loss, roc_auc_score, mean_squared_error, accuracy_score
+from tensorflow.python.keras.callbacks import CallbackList, History
 
 
 class BaseModel(nn.Module):
     def __init__(self, device='cpu'):
         super(BaseModel, self).__init__()
         self.device = device
+        self.history = History()
 
     def fit(self, x=None, y=None, batch_size=None, epochs=1, verbose=1, initial_epoch=0, validation_split=0.,
-            validation_data=None, shuffle=True):
+            log_dir=None, validation_data=None, shuffle=True, callbacks=None):
+        # Tensorboard
+        self.tensorboard_log_dir = log_dir
+        if self.tensorboard_log_dir:
+            self.writer = SummaryWriter(self.tensorboard_log_dir)
+
         if isinstance(x, pd.DataFrame):
             x = [x[feature] for feature in list(x.columns)]
 
@@ -49,15 +57,27 @@ class BaseModel(nn.Module):
         loss_func = self.loss_func
         optim = self.optim
 
+        if self.tensorboard_log_dir:
+            self.writer.add_graph(model, torch.randn((1, torch.from_numpy(np.concatenate(x, axis=-1))[0].shape[0])))
+
         train_loader = Data.DataLoader(dataset=train_tensor_data, shuffle=shuffle, batch_size=batch_size)
 
         sample_num = len(train_tensor_data)
         steps_per_epoch = (sample_num - 1) // batch_size + 1
 
+        # callback method
+        callbacks = (callbacks or []) + [self.history]
+        callbacks = CallbackList(callbacks)
+        callbacks.set_model(self)
+        callbacks.on_train_begin()
+        callbacks.set_model(self)
+        callbacks.model.stop_training = False
+
         print("Train on {0} samples, validate on {1} samples, {2} steps per epoch".format(
             len(train_tensor_data), len(val_y), steps_per_epoch))
 
         for epoch in range(initial_epoch, epochs):
+            callbacks.on_epoch_begin(epoch)
             epoch_logs = {}
             loss_epoch = 0
             total_loss_epoch = 0
@@ -65,7 +85,7 @@ class BaseModel(nn.Module):
             start_time = time.time()
             try:
                 with tqdm(enumerate(train_loader), disable=verbose != 1) as t:
-                    for _, (x_train, y_train) in t:
+                    for i, (x_train, y_train) in t:
                         x = x_train.to(self.device).float()
                         y = y_train.to(self.device).float()
 
@@ -80,6 +100,9 @@ class BaseModel(nn.Module):
                         total_loss_epoch += total_loss.item()
                         loss.backward()
                         optim.step()
+
+                        if self.tensorboard_log_dir:
+                            self.writer.add_scalar('loss', loss, (epoch+1)*steps_per_epoch+i)
 
                         if verbose > 0:
                             for name, metric_fun in self.metrics.items():
@@ -117,6 +140,21 @@ class BaseModel(nn.Module):
                         eval_str += " - " + "val_" + name + \
                                     ": {0: .4f}".format(epoch_logs["val_" + name])
                 print(eval_str)
+            # torch.save(model.state_dict(), './logs/test.pth')
+            callbacks.on_epoch_end(epoch, epoch_logs)
+            if self.tensorboard_log_dir:
+                if epoch_logs:
+                    train_logs = {k: v for k, v in epoch_logs.items() if not k.startswith('val_')}
+                    val_logs = {k: v for k, v in epoch_logs.items() if k.startswith('val')}
+                    self.writer.add_scalars('train_log', train_logs, epoch)
+                    self.writer.add_scalars('val_logs', val_logs, epoch)
+            if self.stop_training:
+                break
+        callbacks.on_train_end()
+        if self.tensorboard_log_dir:
+            self.writer.close()
+
+        return self.history
 
     def evaluate(self, x, y, batch_size):
         val_pre = self.predict(x, batch_size)
